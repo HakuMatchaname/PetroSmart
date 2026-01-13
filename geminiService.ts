@@ -14,6 +14,7 @@ export async function generateNewsEvent(year: number, pollution: number): Promis
     contents: prompt,
     config: {
       responseMimeType: "application/json",
+      thinkingConfig: { thinkingBudget: 0 },
       responseSchema: {
         type: Type.OBJECT,
         properties: {
@@ -61,6 +62,7 @@ export async function generateQuiz(): Promise<QuizQuestion> {
     contents: prompt,
     config: {
       responseMimeType: "application/json",
+      thinkingConfig: { thinkingBudget: 0 },
       responseSchema: {
         type: Type.OBJECT,
         properties: {

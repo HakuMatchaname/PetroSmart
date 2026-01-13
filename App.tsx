@@ -1,10 +1,13 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GameStats, GamePhase, NewsEvent, QuizQuestion } from './types';
 import { Dashboard } from './components/Dashboard';
 import { QuizModule } from './components/QuizModule';
 import { EventModal } from './components/EventModal';
 import { generateNewsEvent, generateQuiz } from './geminiService';
+import { sounds } from './soundUtils';
+
+const SAVE_KEY = 'petrosmart_game_save';
 
 const INITIAL_STATS: GameStats = {
   year: 2024,
@@ -20,29 +23,103 @@ const INITIAL_STATS: GameStats = {
 };
 
 const App: React.FC = () => {
-  const [phase, setPhase] = useState<GamePhase>(GamePhase.MENU);
-  const [stats, setStats] = useState<GameStats>(INITIAL_STATS);
-  const [history, setHistory] = useState<GameStats[]>([INITIAL_STATS]);
+  // State Initialization
+  const [phase, setPhase] = useState<GamePhase>(() => {
+    const saved = localStorage.getItem(SAVE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.phase || GamePhase.MENU;
+      } catch (e) { return GamePhase.MENU; }
+    }
+    return GamePhase.MENU;
+  });
+
+  const [stats, setStats] = useState<GameStats>(() => {
+    const saved = localStorage.getItem(SAVE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.stats || INITIAL_STATS;
+      } catch (e) { return INITIAL_STATS; }
+    }
+    return INITIAL_STATS;
+  });
+
+  const [history, setHistory] = useState<GameStats[]>(() => {
+    const saved = localStorage.getItem(SAVE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.history || [INITIAL_STATS];
+      } catch (e) { return [INITIAL_STATS]; }
+    }
+    return [INITIAL_STATS];
+  });
+
   const [currentEvent, setCurrentEvent] = useState<NewsEvent | null>(null);
   const [currentQuiz, setCurrentQuiz] = useState<QuizQuestion | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
 
-  const resetGame = () => {
-    setStats(INITIAL_STATS);
-    setHistory([INITIAL_STATS]);
-    setPhase(GamePhase.MENU);
-    setCurrentEvent(null);
-    setCurrentQuiz(null);
+  const requestCounter = useRef(0);
+
+  const saveGame = () => {
+    sounds.playClick();
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      phase,
+      stats,
+      history
+    }));
+    setSaveFeedback("Progress Saved!");
+    setTimeout(() => setSaveFeedback(null), 3000);
   };
 
-  // Core Game Actions
+  const initiateRestart = () => {
+    sounds.playClick();
+    const hasActiveProgress = history.length > 1 || localStorage.getItem(SAVE_KEY) !== null;
+    if (hasActiveProgress) {
+      setShowRestartConfirm(true);
+    } else {
+      executeRestart();
+    }
+  };
+
+  const executeRestart = () => {
+    sounds.playMenuTransition();
+    localStorage.removeItem(SAVE_KEY);
+    
+    // Hard reset all state
+    setStats(INITIAL_STATS);
+    setHistory([INITIAL_STATS]);
+    setCurrentEvent(null);
+    setCurrentQuiz(null);
+    setIsLoading(false);
+    setShowRestartConfirm(false);
+    
+    setPhase(GamePhase.PLAYING);
+    requestCounter.current++; // Invalidate pending AI requests
+  };
+
+  const handleExit = () => {
+    sounds.playClick();
+    setPhase(GamePhase.MENU);
+  };
+
+  const handleCancelLoading = () => {
+    sounds.playClick();
+    requestCounter.current++;
+    setIsLoading(false);
+  };
+
   const handleAction = (type: 'DRILL' | 'REFINE' | 'RESEARCH' | 'RENEWABLE' | 'SKIP_TURN') => {
     if (isLoading || stats.turnsRemaining <= 0) return;
 
     setStats(prev => {
       let next = { ...prev };
+      let success = false;
       
-      // Industrial Actions (Consume 1 Turn)
       switch (type) {
         case 'DRILL':
           if (next.cash >= 100000) {
@@ -50,6 +127,7 @@ const App: React.FC = () => {
             next.crudeOil += 50000;
             next.pollution += 2;
             next.turnsRemaining -= 1;
+            success = true;
           }
           break;
         case 'REFINE':
@@ -59,6 +137,7 @@ const App: React.FC = () => {
             next.cash += 150000;
             next.pollution += 3;
             next.turnsRemaining -= 1;
+            success = true;
           }
           break;
         case 'RESEARCH':
@@ -66,6 +145,7 @@ const App: React.FC = () => {
             next.cash -= 50000;
             next.knowledge += 10;
             next.turnsRemaining -= 1;
+            success = true;
           }
           break;
         case 'RENEWABLE':
@@ -74,17 +154,21 @@ const App: React.FC = () => {
             next.renewableCapacity += 5;
             next.pollution = Math.max(0, next.pollution - 5);
             next.turnsRemaining -= 1;
+            success = true;
           }
           break;
         case 'SKIP_TURN':
           next.turnsRemaining -= 1;
+          success = true;
           break;
       }
 
-      // Record History after every action
+      if (success) {
+        sounds.playAction();
+      }
+
       const recordPoint = { ...next };
 
-      // If turns exhausted, end the month
       if (next.turnsRemaining === 0) {
         const finalOfMonth = processEndOfMonth(next);
         setHistory(prevHist => [...prevHist, recordPoint, finalOfMonth]);
@@ -98,21 +182,17 @@ const App: React.FC = () => {
 
   const processEndOfMonth = (currentStats: GameStats): GameStats => {
     let next = { ...currentStats };
-    
-    // Monthly Maintenance & Passive Effects
-    next.cash += next.renewableCapacity * 5000; // Monthly clean energy subsidy
+    next.cash += next.renewableCapacity * 5000; 
     next.approval = Math.min(100, next.approval + (next.renewableCapacity / 10) - (next.pollution / 20));
     
-    // Cycle Time
     next.month += 1;
-    next.turnsRemaining = 5; // Reset turns for new month
+    next.turnsRemaining = 5;
 
     if (next.month > 12) {
       next.month = 1;
       next.year += 1;
     }
 
-    // Check triggers
     const totalMonths = (next.year - 2024) * 12 + next.month;
     if (totalMonths % 4 === 0) {
       setTimeout(() => triggerEvent(next), 100);
@@ -120,8 +200,8 @@ const App: React.FC = () => {
       setTimeout(() => triggerQuiz(), 100);
     }
 
-    // Check Game Over
     if (next.pollution >= 100 || next.approval <= 0 || next.cash < -500000) {
+      sounds.playGameOver();
       setPhase(GamePhase.GAMEOVER);
     }
 
@@ -130,31 +210,42 @@ const App: React.FC = () => {
 
   const triggerEvent = async (currentStats: GameStats) => {
     setIsLoading(true);
+    const requestId = ++requestCounter.current;
     try {
       const event = await generateNewsEvent(currentStats.year, currentStats.pollution);
+      if (requestCounter.current !== requestId) return;
+      sounds.playAiChime();
       setCurrentEvent(event);
       setPhase(GamePhase.EVENT);
     } catch (err) {
       console.error(err);
     } finally {
-      setIsLoading(false);
+      if (requestCounter.current === requestId) {
+        setIsLoading(false);
+      }
     }
   };
 
   const triggerQuiz = async () => {
     setIsLoading(true);
+    const requestId = ++requestCounter.current;
     try {
       const quiz = await generateQuiz();
+      if (requestCounter.current !== requestId) return;
+      sounds.playAiChime();
       setCurrentQuiz(quiz);
       setPhase(GamePhase.QUIZ);
     } catch (err) {
       console.error(err);
     } finally {
-      setIsLoading(false);
+      if (requestCounter.current === requestId) {
+        setIsLoading(false);
+      }
     }
   };
 
   const resolveEvent = (impact: Partial<GameStats>) => {
+    sounds.playClick();
     setStats(prev => {
       const next = { ...prev, ...impact };
       setHistory(h => [...h, next]);
@@ -166,6 +257,7 @@ const App: React.FC = () => {
 
   const resolveQuiz = (correct: boolean) => {
     if (correct) {
+      sounds.playSuccess();
       setStats(prev => {
         const next = {
           ...prev,
@@ -176,12 +268,15 @@ const App: React.FC = () => {
         setHistory(h => [...h, next]);
         return next;
       });
+    } else {
+      sounds.playAction();
     }
     setCurrentQuiz(null);
     setPhase(GamePhase.PLAYING);
   };
 
   if (phase === GamePhase.MENU) {
+    const hasSave = history.length > 1;
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black">
         <div className="mb-8 p-4 bg-amber-500/10 rounded-full border border-amber-500/20">
@@ -194,12 +289,52 @@ const App: React.FC = () => {
           Master the petroleum industry, manage the environment, and lead the global energy transition. 
           Each month gives you 5 critical decision turns. Use them wisely!
         </p>
-        <button
-          onClick={() => setPhase(GamePhase.PLAYING)}
-          className="px-12 py-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xl rounded-full transition-all transform hover:scale-105 shadow-2xl shadow-amber-500/20"
-        >
-          START OPERATION
-        </button>
+        <div className="flex flex-col gap-4 w-full max-w-sm">
+          {hasSave && (
+            <button
+              onClick={() => { sounds.playMenuTransition(); setPhase(GamePhase.PLAYING); }}
+              className="px-12 py-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xl rounded-full transition-all transform hover:scale-105 shadow-2xl shadow-amber-500/20"
+            >
+              RESUME OPERATION
+            </button>
+          )}
+          <button
+            onClick={initiateRestart}
+            className={`px-12 py-4 font-black text-xl rounded-full transition-all transform hover:scale-105 ${
+              hasSave 
+              ? 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700' 
+              : 'bg-amber-500 text-slate-950 shadow-2xl shadow-amber-500/20'
+            }`}
+          >
+            {hasSave ? 'RESTART MISSION' : 'NEW GAME'}
+          </button>
+        </div>
+
+        {showRestartConfirm && (
+          <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[200] backdrop-blur-md">
+            <div className="bg-slate-900 border-2 border-red-500/50 p-8 rounded-3xl max-w-md w-full shadow-2xl">
+              <div className="text-red-500 text-5xl mb-4 text-center">⚠️</div>
+              <h2 className="text-2xl font-black text-white mb-4 text-center">Confirm Mission Reset</h2>
+              <p className="text-slate-400 mb-8 text-center leading-relaxed">
+                Warning: This will permanently purge all current operational progress and financial history. This action cannot be undone.
+              </p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={executeRestart}
+                  className="w-full py-4 bg-red-600 hover:bg-red-500 text-white font-black rounded-xl transition-all shadow-lg shadow-red-500/20"
+                >
+                  PURGE & RESTART
+                </button>
+                <button
+                  onClick={() => { sounds.playClick(); setShowRestartConfirm(false); }}
+                  className="w-full py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all"
+                >
+                  ABORT RESET
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -223,8 +358,8 @@ const App: React.FC = () => {
           </div>
         </div>
         <button
-          onClick={resetGame}
-          className="px-8 py-3 bg-white text-slate-900 font-bold rounded-lg hover:bg-slate-200 transition-colors"
+          onClick={() => { sounds.playClick(); setPhase(GamePhase.MENU); }}
+          className="px-8 py-3 bg-white text-slate-900 font-bold rounded-lg hover:bg-slate-200 transition-colors shadow-lg"
         >
           Return to HQ
         </button>
@@ -240,12 +375,26 @@ const App: React.FC = () => {
             <h1 className="text-3xl font-black tracking-tighter">PETRO<span className="text-amber-500">SMART</span></h1>
             <p className="text-slate-500 text-sm">Decision Engine Active &gt; Monthly Cycle</p>
           </div>
-          <button 
-            onClick={() => { if(confirm("Abandon current operation and return to menu?")) resetGame(); }}
-            className="hidden md:block px-3 py-1 text-xs font-bold text-red-400 border border-red-500/30 rounded hover:bg-red-500/10 transition-colors uppercase tracking-widest"
-          >
-            New Game
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleExit}
+              title="Return to menu without saving"
+              className="px-3 py-1 text-xs font-bold text-slate-400 border border-slate-700 rounded hover:bg-slate-800 transition-all uppercase tracking-widest flex items-center gap-2"
+            >
+              <span>🚪</span> Exit to HQ
+            </button>
+            <button 
+              onClick={saveGame}
+              className="px-3 py-1 text-xs font-bold text-emerald-400 border border-emerald-500/30 rounded hover:bg-emerald-500/10 transition-all uppercase tracking-widest relative"
+            >
+              Save Game
+              {saveFeedback && (
+                <span className="absolute -bottom-6 left-0 w-full text-[10px] text-emerald-500 animate-fade-out font-mono text-center">
+                  {saveFeedback}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-4 bg-slate-900 px-4 py-2 rounded-lg border border-slate-800">
            <div className="text-right">
@@ -258,12 +407,6 @@ const App: React.FC = () => {
              <div className="text-blue-400 animate-pulse font-mono">READY</div>
            </div>
         </div>
-        <button 
-          onClick={() => { if(confirm("Abandon current operation and return to menu?")) resetGame(); }}
-          className="md:hidden w-full py-2 text-xs font-bold text-red-400 border border-red-500/30 rounded hover:bg-red-500/10 transition-colors uppercase tracking-widest"
-        >
-          New Game / Reset
-        </button>
       </header>
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
@@ -332,7 +475,7 @@ const App: React.FC = () => {
           <div className="bg-amber-900/10 p-6 rounded-2xl border border-amber-500/20">
             <h3 className="text-lg font-bold text-amber-300 mb-2">Did You Know?</h3>
             <p className="text-slate-400 text-sm leading-relaxed">
-              One "month" of planning often involves thousands of sub-decisions. In PetroSmart, your 5 monthly turns represent high-level strategic pivots.
+              Petroleum isn't just fuel. Over 6,000 products are made from oil, including plastics, medicines, and fertilizers. Managing it responsibly is key!
             </p>
           </div>
         </div>
@@ -349,7 +492,13 @@ const App: React.FC = () => {
       {isLoading && (
         <div className="fixed inset-0 bg-slate-950/80 flex flex-col items-center justify-center z-[100] backdrop-blur-md">
            <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-           <p className="text-amber-500 font-black animate-pulse tracking-widest uppercase">Consulting AI Experts...</p>
+           <p className="text-amber-500 font-black animate-pulse tracking-widest uppercase mb-6">Consulting AI Experts...</p>
+           <button 
+            onClick={handleCancelLoading}
+            className="px-6 py-2 bg-red-500/20 border border-red-500 text-red-400 hover:bg-red-500 hover:text-white rounded-full transition-all font-bold uppercase tracking-widest text-xs"
+           >
+            Cancel Consultation
+           </button>
         </div>
       )}
     </div>
@@ -365,7 +514,7 @@ const ActionButton: React.FC<{
   color: string;
 }> = ({ onClick, disabled, icon, label, cost, color }) => (
   <button
-    onClick={onClick}
+    onClick={() => { if (!disabled) { sounds.playClick(); onClick(); } }}
     disabled={disabled}
     className={`flex flex-col items-center justify-center p-4 bg-slate-800 rounded-xl border border-slate-700 transition-all duration-300 ${
       disabled 

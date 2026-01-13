@@ -11,7 +11,7 @@ interface DashboardProps {
 type ViewMode = 'annually' | 'monthly' | 'turns';
 
 const StatCard: React.FC<{ label: string; value: string | number; color: string; icon: string }> = ({ label, value, color, icon }) => (
-  <div className={`bg-slate-800/50 border-l-4 ${color} p-4 rounded-r-lg shadow-lg`}>
+  <div className={`bg-slate-800/50 border-l-4 ${color} p-4 rounded-r-lg shadow-lg transition-all duration-500 hover:bg-slate-800`}>
     <div className="flex items-center justify-between mb-1">
       <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">{label}</span>
       <span className="text-xl">{icon}</span>
@@ -20,11 +20,23 @@ const StatCard: React.FC<{ label: string; value: string | number; color: string;
   </div>
 );
 
+const PulsingDot = (props: any) => {
+  const { cx, cy, fill } = props;
+  if (!cx || !cy) return null;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={10} fill={fill} className="animate-ping opacity-20" />
+      <circle cx={cx} cy={cy} r={6} fill={fill} className="animate-pulse opacity-40" />
+      <circle cx={cx} cy={cy} r={4} fill={fill} stroke="#fff" strokeWidth={2} />
+    </g>
+  );
+};
+
 const CustomTooltip = ({ active, payload, label, viewMode }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
-      <div className="bg-slate-900 border border-slate-700 p-3 rounded-lg shadow-2xl backdrop-blur-md">
+      <div className="bg-slate-900/90 border border-slate-700 p-3 rounded-lg shadow-2xl backdrop-blur-md ring-1 ring-white/10">
         <p className="text-slate-400 text-xs font-bold mb-2 uppercase tracking-widest">
           {viewMode === 'annually' ? `Year ${data.year}` : 
            viewMode === 'monthly' ? `Y${data.year} - Month ${data.month}` : 
@@ -62,7 +74,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
     if (viewMode === 'turns') return history;
     
     if (viewMode === 'monthly') {
-      // Filter to keep only the state at the end of each month (month changes or it's the absolute last entry)
       return history.filter((h, i, arr) => {
         const next = arr[i + 1];
         const isLastOfCurrentMonth = next ? (next.month !== h.month || next.year !== h.year) : true;
@@ -71,7 +82,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
     }
 
     if (viewMode === 'annually') {
-      // Filter to keep only the state at the end of each year
       return history.filter((h, i, arr) => {
         const next = arr[i + 1];
         const isLastOfCurrentYear = next ? next.year !== h.year : true;
@@ -87,7 +97,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
     if (!data) return '';
     if (viewMode === 'annually') return `${data.year}`;
     if (viewMode === 'monthly') return `M${data.month}`;
-    return `T${index % 50}`; // Simplified for turns
+    return `T${index % 50}`;
   };
 
   return (
@@ -103,7 +113,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
         <StatCard label="Renewable" value={`${stats.renewableCapacity} GW`} color="border-green-400" icon="⚡" />
       </div>
 
-      <div className="flex items-center justify-between bg-slate-900/40 p-3 rounded-xl border border-slate-800">
+      <div className="flex items-center justify-between bg-slate-900/40 p-3 rounded-xl border border-slate-800 backdrop-blur-sm">
         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest px-2">Data Analytics View</h3>
         <div className="flex gap-1">
           {(['annually', 'monthly', 'turns'] as ViewMode[]).map((mode) => (
@@ -124,16 +134,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {/* Financial Performance */}
-        <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 shadow-xl">
+        <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 shadow-xl group transition-all duration-300 hover:border-slate-600 min-w-0 overflow-hidden">
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <span className="text-emerald-400">💰</span> Funds Liquidity
+            <span className="text-emerald-400 group-hover:animate-pulse">💰</span> Funds Liquidity
           </h3>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 w-full relative">
+            <ResponsiveContainer width="100%" height="100%" debounce={50}>
               <AreaChart data={processedHistory} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorCash" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
                     <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
@@ -156,7 +166,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
                   fill="url(#colorCash)" 
                   name="Funds" 
                   strokeWidth={3}
-                  activeDot={{ r: 6, strokeWidth: 0 }}
+                  animationDuration={1500}
+                  animationEasing="ease-in-out"
+                  activeDot={<PulsingDot fill="#10b981" />}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -164,12 +176,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
         </div>
 
         {/* Operational Health */}
-        <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 shadow-xl">
+        <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 shadow-xl group transition-all duration-300 hover:border-slate-600 min-w-0 overflow-hidden">
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-             <span className="text-blue-400">📊</span> Public & Intel Status
+             <span className="text-blue-400 group-hover:animate-pulse">📊</span> Public & Intel Status
           </h3>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 w-full relative">
+            <ResponsiveContainer width="100%" height="100%" debounce={50}>
               <LineChart data={processedHistory} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                 <XAxis 
@@ -189,7 +201,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
                   name="Public Approval" 
                   strokeWidth={3} 
                   dot={false}
-                  activeDot={{ r: 6, strokeWidth: 0 }}
+                  animationDuration={1500}
+                  animationEasing="ease-in-out"
+                  activeDot={<PulsingDot fill="#60a5fa" />}
                 />
                 <Line 
                   type="monotone" 
@@ -198,7 +212,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
                   name="Knowledge" 
                   strokeWidth={3} 
                   dot={false}
-                  activeDot={{ r: 6, strokeWidth: 0 }}
+                  animationDuration={1500}
+                  animationEasing="ease-in-out"
+                  activeDot={<PulsingDot fill="#818cf8" />}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -206,12 +222,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
         </div>
 
         {/* Sustainability & Transition */}
-        <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 shadow-xl lg:col-span-2 xl:col-span-1">
+        <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 shadow-xl lg:col-span-2 xl:col-span-1 group transition-all duration-300 hover:border-slate-600 min-w-0 overflow-hidden">
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <span className="text-green-400">🌱</span> Energy Transition
+            <span className="text-green-400 group-hover:animate-pulse">🌱</span> Energy Transition
           </h3>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 w-full relative">
+            <ResponsiveContainer width="100%" height="100%" debounce={50}>
               <ComposedChart data={processedHistory} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                 <XAxis 
@@ -246,6 +262,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
                   name="Renewable" 
                   radius={[4, 4, 0, 0]} 
                   opacity={0.6}
+                  animationDuration={1000}
                 />
                 <Line 
                   yAxisId="right" 
@@ -255,7 +272,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, history }) => {
                   name="Pollution" 
                   strokeWidth={3} 
                   dot={false}
-                  activeDot={{ r: 6, strokeWidth: 0 }}
+                  animationDuration={1500}
+                  animationEasing="ease-in-out"
+                  activeDot={<PulsingDot fill="#ef4444" />}
                 />
               </ComposedChart>
             </ResponsiveContainer>
