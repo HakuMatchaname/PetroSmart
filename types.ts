@@ -1,4 +1,13 @@
 
+export type Language = 'EN' | 'ID';
+
+export interface Upgrades {
+  drillLevel: number;
+  refineLevel: number;
+  researchLevel: number;
+  renewableLevel: number;
+}
+
 export interface GameStats {
   year: number;
   month: number;
@@ -10,6 +19,18 @@ export interface GameStats {
   approval: number;
   knowledge: number;
   renewableCapacity: number;
+  upgrades: Upgrades;
+  language: Language;
+}
+
+// Fix: Updated title and description to be localized records to match industrial requirements
+export interface Achievement {
+  id: string;
+  title: Record<Language, string>;
+  description: Record<Language, string>;
+  icon: string;
+  criteria: (stats: GameStats) => boolean;
+  unlockedAt?: number;
 }
 
 export interface NewsEvent {
@@ -30,6 +51,7 @@ export interface QuizQuestion {
   options: string[];
   correctIndex: number;
   explanation: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
 }
 
 export enum GamePhase {
@@ -37,5 +59,6 @@ export enum GamePhase {
   PLAYING = 'PLAYING',
   QUIZ = 'QUIZ',
   EVENT = 'EVENT',
-  GAMEOVER = 'GAMEOVER'
+  GAMEOVER = 'GAMEOVER',
+  YEARLY_REVIEW = 'YEARLY_REVIEW'
 }

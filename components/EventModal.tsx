@@ -1,20 +1,23 @@
 
 import React from 'react';
-import { NewsEvent, GameStats } from '../types';
+import { NewsEvent, GameStats, Language } from '../types';
+import { UI_STRINGS } from '../translations';
 
 interface EventModalProps {
   event: NewsEvent;
   onResolve: (impact: Partial<GameStats>) => void;
+  lang: Language;
 }
 
-export const EventModal: React.FC<EventModalProps> = ({ event, onResolve }) => {
+export const EventModal: React.FC<EventModalProps> = ({ event, onResolve, lang }) => {
+  const T = UI_STRINGS[lang];
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-      <div className="bg-slate-800 border border-slate-700 w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl">
+      <div className="bg-slate-800 border border-slate-700 w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl animate-scale-in">
         <div className="bg-slate-900 p-6 border-b border-slate-700">
           <div className="flex items-center gap-3">
             <span className="text-red-500 text-2xl animate-pulse">📡</span>
-            <h2 className="text-xl font-bold uppercase tracking-tighter text-slate-200">Breaking News</h2>
+            <h2 className="text-xl font-bold uppercase tracking-tighter text-slate-200">{T.breakingNews}</h2>
           </div>
         </div>
         
@@ -41,7 +44,7 @@ export const EventModal: React.FC<EventModalProps> = ({ event, onResolve }) => {
                 onClick={() => onResolve({ [event.impact.stat]: event.impact.value })}
                 className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all"
               >
-                Acknowledge & Proceed
+                {T.acknowledge}
               </button>
             )}
           </div>
